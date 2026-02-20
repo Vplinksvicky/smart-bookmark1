@@ -1,0 +1,117 @@
+!pip install pyngrok -q
+
+from pyngrok import ngrok
+ngrok.set_auth_token("39v7bBOgCNftcZPWRjTqKgvyaWm_368M37wJF6oZSNG9n7CkS")
+
+!pip install transformers torch fastapi uvicorn nest_asyncio pyngrok -q
+
+import os
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+from transformers import pipeline
+from pyngrok import ngrok
+import nest_asyncio, uvicorn, asyncio
+
+nest_asyncio.apply()
+
+# 👉 PUT YOUR NGROK TOKEN
+ngrok.set_auth_token("39v7bBOgCNftcZPWRjTqKgvyaWm_368M37wJF6oZSNG9n7CkS")
+
+# LOAD AI MODEL
+generator = pipeline("text-generation",
+                     model="sshleifer/tiny-gpt2",
+                     framework="pt")
+
+# FASTAPI APP
+app = FastAPI()
+
+class Bookmark(BaseModel):
+    url: str
+
+# ===== BEAUTIFUL WEBSITE =====
+@app.get("/", response_class=HTMLResponse)
+def website():
+    return """
+    <html>
+    <head>
+        <title>Smart Bookmark AI</title>
+        <style>
+            body{
+                font-family: Arial;
+                background: linear-gradient(120deg,#4facfe,#00f2fe);
+                text-align:center;
+                padding-top:80px;
+                color:white;
+            }
+            .box{
+                background:white;
+                color:black;
+                width:400px;
+                margin:auto;
+                padding:30px;
+                border-radius:15px;
+                box-shadow:0 10px 30px rgba(0,0,0,0.2);
+            }
+            input{
+                width:90%;
+                padding:10px;
+                margin:10px;
+                border-radius:8px;
+                border:1px solid gray;
+            }
+            button{
+                padding:10px 20px;
+                background:#4facfe;
+                border:none;
+                color:white;
+                border-radius:8px;
+                cursor:pointer;
+            }
+            h1{margin-bottom:10px;}
+        </style>
+    </head>
+    <body>
+        <h1>📌 Smart Bookmark AI</h1>
+        <div class="box">
+            <input id="url" placeholder="Enter Website URL">
+            <br>
+            <button onclick="generate()">Generate Title</button>
+            <h3 id="result"></h3>
+        </div>
+
+        <script>
+        async function generate(){
+            let url=document.getElementById("url").value;
+            let res=await fetch("/generate",{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({url:url})
+            });
+            let data=await res.json();
+            document.getElementById("result").innerText=data.title;
+        }
+        </script>
+    </body>
+    </html>
+    """
+
+@app.post("/generate")
+def generate_title(data: Bookmark):
+    prompt=f"Short bookmark title for {data.url}:"
+    result=generator(prompt,max_length=20)
+    title=result[0]["generated_text"].replace(prompt,"")
+    return {"title":title}
+
+# PUBLIC URL
+public_url=ngrok.connect(8000)
+print("🌍 WEBSITE URL:",public_url)
+
+# RUN SERVER
+asyncio.get_event_loop().create_task(
+    uvicorn.Server(
+        uvicorn.Config(app,host="0.0.0.0",port=8000)
+    ).serve()
+)
